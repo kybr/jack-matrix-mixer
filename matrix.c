@@ -33,7 +33,8 @@
 #endif
 #include <jack/jack.h>
 
-static jack_port_t in_port[2], out_port[2];
+jack_port_t *in_port[2];
+jack_port_t *out_port[2];
 jack_client_t *client;
 
 float gain = 0.5;
@@ -70,10 +71,11 @@ static void signal_handler(int sig) {
 }
 
 int main(int argc, char *argv[]) {
+  const char *client_name = "matrix";
   //
   //
   jack_status_t status;
-  client = jack_client_open("matrix", JackNullOption, &status, NULL);
+  client = jack_client_open(client_name, JackNullOption, &status, NULL);
   if (client == NULL) {
     fprintf(stderr,
             "jack_client_open() failed, "
