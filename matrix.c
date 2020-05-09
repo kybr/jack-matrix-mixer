@@ -5,7 +5,6 @@
 
 // TODO:
 //
-// - fix clicks at the block rate
 // - implement cross-fading
 // - integrate OSC library
 // - copy OSC protocol from the Max patch
@@ -16,6 +15,8 @@
 //
 // DONE:
 //
+// - fix clicks at the block rate
+//   + you have to clear the output buffer before accumulating
 // - implement matrix mixing
 // - adapt to allow CLI option for N inputs/outputs
 // - remove globals
@@ -78,6 +79,9 @@ int process(jack_nframes_t N, void *_) {
   //
   for (int k = 0; k < state->size; ++k) {
     jack_default_audio_sample_t *output = state->o[k];
+    for (int n = 0; n < N; ++n) {
+      output[n] = 0;
+    }
 
     for (int j = 0; j < state->size; ++j) {
       if (!state->connection[j * state->size + k]) continue;
@@ -93,6 +97,9 @@ int process(jack_nframes_t N, void *_) {
   //
   for (int k = 0; k < state->size; ++k) {
     jack_default_audio_sample_t *mix = state->m[k];
+    for (int n = 0; n < N; ++n) {
+      mix[n] = 0;
+    }
 
     for (int j = 0; j < state->size; ++j) {
       if (j == k) continue;
