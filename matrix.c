@@ -5,7 +5,6 @@
 
 // TODO:
 //
-// - adapt to allow CLI option for N inputs/outputs
 // - implement matrix mixing
 // - implement cross-fading
 // - integrate OSC library
@@ -17,6 +16,8 @@
 //
 // DONE:
 //
+// - adapt to allow CLI option for N inputs/outputs
+// - remove globals
 // - make a compiling, running jack client app
 // - make a Github repository
 // - choose a license
@@ -25,6 +26,7 @@
 #include <errno.h>
 #include <math.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,31 +35,50 @@
 #endif
 #include <jack/jack.h>
 
-jack_port_t *in_port[2];
-jack_port_t *out_port[2];
-jack_client_t *client;
+jack_client_t *client;  // maybe we can have just this one global
 
-float gain = 0.5;
+typedef struct {
+  jack_port_t **in;
+  jack_port_t **out;
+  jack_port_t **mix;
+  jack_default_audio_sample_t **i;
+  jack_default_audio_sample_t **o;
+  jack_default_audio_sample_t **m;
+  bool *connection;
+  int size;
+} State;
 
-int process(jack_nframes_t nframes, void *_) {
-#define SAMPLE jack_default_audio_sample_t
-  SAMPLE *out0 = (SAMPLE *)jack_port_get_buffer(out_port[0], nframes);
-  SAMPLE *out1 = (SAMPLE *)jack_port_get_buffer(out_port[1], nframes);
-  SAMPLE *in0 = (SAMPLE *)jack_port_get_buffer(in_port[0], nframes);
-  SAMPLE *in1 = (SAMPLE *)jack_port_get_buffer(in_port[1], nframes);
-#undef SAMPLE
+int process(jack_nframes_t N, void *_) {
+  State *state = (State *)_;
 
-  // copy the 2 inputs to the 2 outputs, but swap/cross.
-  // also attenuate with a global gain
-  //
-  for (int i = 0; i < nframes; i++) {
-    out0[i] = in1[i] * gain;
-    out1[i] = in0[i] * gain;
+  for (int k = 0; k < state->size; ++k) {
+    state->i[k] =
+        (jack_default_audio_sample_t *)jack_port_get_buffer(state->in[k], N);
+    state->o[k] =
+        (jack_default_audio_sample_t *)jack_port_get_buffer(state->out[k], N);
+    state->m[k] =
+        (jack_default_audio_sample_t *)jack_port_get_buffer(state->mix[k], N);
   }
 
-  // implement matrix mixing here
-  //
-  //
+  for (int k = 0; k < state->size; ++k) {
+    jack_default_audio_sample_t *output = state->o[k];
+    jack_default_audio_sample_t *input = state->i[k];
+
+    // wrong; placeholder. copy input to output for testing
+    for (int n = 0; n < N; ++n) {
+      output[n] = input[n];
+    }
+  }
+
+  for (int k = 0; k < state->size; ++k) {
+    jack_default_audio_sample_t *mix = state->m[k];
+    jack_default_audio_sample_t *input = state->i[k];
+
+    // wrong; placeholder. copy input to output for testing
+    for (int n = 0; n < N; ++n) {
+      mix[n] = input[n];
+    }
+  }
 
   return 0;
 }
@@ -74,6 +95,7 @@ int main(int argc, char *argv[]) {
   const char *client_name = "matrix";
   //
   //
+  State state;
   jack_status_t status;
   client = jack_client_open(client_name, JackNullOption, &status, NULL);
   if (client == NULL) {
@@ -94,25 +116,63 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "unique name `%s' assigned\n", client_name);
   }
 
-  jack_set_process_callback(client, process, NULL);
+  // initialize state
+  //
+  state.size = 2;
+  if (argc > 1) {
+    int h = atoi(argv[1]);
+    if (h > 0 && h < 33)  //
+      state.size = h;
+  }
+  state.in = (jack_port_t **)calloc(sizeof(jack_port_t *), state.size);
+  state.out = (jack_port_t **)calloc(sizeof(jack_port_t *), state.size);
+  state.mix = (jack_port_t **)calloc(sizeof(jack_port_t *), state.size);
+  state.i = (jack_default_audio_sample_t **)calloc(
+      sizeof(jack_default_audio_sample_t *), state.size);
+  state.o = (jack_default_audio_sample_t **)calloc(
+      sizeof(jack_default_audio_sample_t *), state.size);
+  state.m = (jack_default_audio_sample_t **)calloc(
+      sizeof(jack_default_audio_sample_t *), state.size);
+  state.connection = (bool *)calloc(sizeof(bool), state.size * state.size);
+
+  // start callback (?)
+  //
+  jack_set_process_callback(client, process, &state);
   jack_on_shutdown(client, jack_shutdown, 0);
 
-  out_port[0] = jack_port_register(client, "output1", JACK_DEFAULT_AUDIO_TYPE,
-                                   JackPortIsOutput, 0);
+  // register ports
+  //
+  char port_name[256] = {0};
+  for (int k = 0; k < state.size; ++k) {
+    // inputs
+    //
+    sprintf(port_name, "input%d", k);
+    state.in[k] = jack_port_register(client, port_name, JACK_DEFAULT_AUDIO_TYPE,
+                                     JackPortIsInput, 0);
+    if (state.in[k] == NULL) {
+      fprintf(stderr, "no more JACK ports available\n");
+      exit(1);
+    }
 
-  out_port[1] = jack_port_register(client, "output2", JACK_DEFAULT_AUDIO_TYPE,
-                                   JackPortIsOutput, 0);
+    // outputs
+    //
+    sprintf(port_name, "output%d", k);
+    state.out[k] = jack_port_register(
+        client, port_name, JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
+    if (state.out[k] == NULL) {
+      fprintf(stderr, "no more JACK ports available\n");
+      exit(1);
+    }
 
-  in_port[0] = jack_port_register(client, "input1", JACK_DEFAULT_AUDIO_TYPE,
-                                  JackPortIsInput, 0);
-
-  in_port[1] = jack_port_register(client, "input2", JACK_DEFAULT_AUDIO_TYPE,
-                                  JackPortIsInput, 0);
-
-  if ((out_port[0] == NULL) || (out_port[1] == NULL) || (in_port[0] == NULL) ||
-      (in_port[1] == NULL)) {
-    fprintf(stderr, "no more JACK ports available\n");
-    exit(1);
+    // mixes (also outputs)
+    //
+    sprintf(port_name, "mix%d", k);
+    state.mix[k] = jack_port_register(
+        client, port_name, JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
+    if (state.mix[k] == NULL) {
+      fprintf(stderr, "no more JACK ports available\n");
+      exit(1);
+    }
   }
 
   // GO!
