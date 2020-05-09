@@ -36,7 +36,7 @@ int process(jack_nframes_t N, void *_) {
   for (int k = 0; k < state->out_count; ++k) {
     jack_default_audio_sample_t *output = state->o[k];
     for (int j = 0; j < N; j++) {
-      output[j] = sine[(int)(state->phase[k] * TABLE_SIZE)];
+      output[j] = 0.1 * sine[(int)(state->phase[k] * TABLE_SIZE)];
       state->phase[k] += 110.0f * (1 + k) / SAMPLE_RATE;
       if (state->phase[k] > 1)  //
         state->phase[k] -= 1;

@@ -5,7 +5,7 @@
 
 // TODO:
 //
-// - implement matrix mixing
+// - fix clicks at the block rate
 // - implement cross-fading
 // - integrate OSC library
 // - copy OSC protocol from the Max patch
@@ -16,6 +16,7 @@
 //
 // DONE:
 //
+// - implement matrix mixing
 // - adapt to allow CLI option for N inputs/outputs
 // - remove globals
 // - make a compiling, running jack client app
@@ -48,6 +49,19 @@ typedef struct {
   int size;
 } State;
 
+void print(bool *matrix, int size) {
+  printf("~~~~~~~( matrix )~~~~~~~~~~\n");
+  for (int k = 0; k < size * size; ++k) {
+    if (k % size == 0 && k != 0) printf("\n");
+    if (matrix[k])
+      printf("x");
+    else
+      printf(" ");
+  }
+  printf("\n");
+  printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+}
+
 int process(jack_nframes_t N, void *_) {
   State *state = (State *)_;
 
@@ -60,23 +74,33 @@ int process(jack_nframes_t N, void *_) {
         (jack_default_audio_sample_t *)jack_port_get_buffer(state->mix[k], N);
   }
 
+  // matrix
+  //
   for (int k = 0; k < state->size; ++k) {
     jack_default_audio_sample_t *output = state->o[k];
-    jack_default_audio_sample_t *input = state->i[k];
 
-    // wrong; placeholder. copy input to output for testing
-    for (int n = 0; n < N; ++n) {
-      output[n] = input[n];
+    for (int j = 0; j < state->size; ++j) {
+      if (!state->connection[j * state->size + k]) continue;
+
+      jack_default_audio_sample_t *input = state->i[j];
+      for (int n = 0; n < N; ++n) {
+        output[n] += input[n];
+      }
     }
   }
 
+  // mixes: everyone gets a mix of everyone but them
+  //
   for (int k = 0; k < state->size; ++k) {
     jack_default_audio_sample_t *mix = state->m[k];
-    jack_default_audio_sample_t *input = state->i[k];
 
-    // wrong; placeholder. copy input to output for testing
-    for (int n = 0; n < N; ++n) {
-      mix[n] = input[n];
+    for (int j = 0; j < state->size; ++j) {
+      if (j == k) continue;
+
+      jack_default_audio_sample_t *input = state->i[j];
+      for (int n = 0; n < N; ++n) {
+        mix[n] += input[n];
+      }
     }
   }
 
@@ -134,6 +158,15 @@ int main(int argc, char *argv[]) {
   state.m = (jack_default_audio_sample_t **)calloc(
       sizeof(jack_default_audio_sample_t *), state.size);
   state.connection = (bool *)calloc(sizeof(bool), state.size * state.size);
+
+  // make a ring
+  //
+  for (int k = 0; k < state.size; ++k) {
+    int j = (1 + k) % state.size;
+    state.connection[k * state.size + j] = true;
+  }
+
+  print(state.connection, state.size);
 
   // start callback (?)
   //
