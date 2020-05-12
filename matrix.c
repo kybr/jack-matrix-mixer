@@ -6,15 +6,16 @@
 // TODO:
 //
 // - implement cross-fading
-// - integrate OSC library
 // - copy OSC protocol from the Max patch
-// - implement OSC control
 // - add automatic connection to JackTrip ports
 // - support several common topology
 //   + ring, star, trios, full
 //
 // DONE:
 //
+// - note where to put locks
+// - implement OSC control (of absolute matrix state)
+// - integrate OSC library
 // - fix clicks at the block rate
 //   + you have to clear the output buffer before accumulating
 // - implement matrix mixing
@@ -36,6 +37,7 @@
 #include <unistd.h>
 #endif
 #include <jack/jack.h>
+#include <lo/lo.h>
 
 jack_client_t *client;  // maybe we can have just this one global
 
@@ -63,6 +65,10 @@ void print(float *matrix, int size) {
 int process(jack_nframes_t N, void *_) {
   State *state = (State *)_;
 
+  // XXX try lock
+  // copy gains to local static
+  // XXX free lock
+
   for (int k = 0; k < state->size; ++k) {
     state->i[k] =
         (jack_default_audio_sample_t *)jack_port_get_buffer(state->in[k], N);
@@ -81,6 +87,7 @@ int process(jack_nframes_t N, void *_) {
     }
 
     for (int j = 0; j < state->size; ++j) {
+      // XXX use local static instead
       float gain = state->gain[j * state->size + k];
 
       jack_default_audio_sample_t *input = state->i[j];
@@ -119,6 +126,54 @@ static void signal_handler(int sig) {
   exit(0);
 }
 
+void error(int num, const char *msg, const char *path) {
+  printf("liblo server error %d in path %s: %s\n", num, path, msg);
+  fflush(stdout);
+}
+
+/* catch any incoming messages and display them. returning 1 means that the
+ * message has not been fully handled and the server should try other methods */
+int generic_handler(const char *path, const char *types, lo_arg **argv,
+                    int argc, void *data, void *_) {
+  // State *state = (State *)_;
+
+  int i;
+
+  printf("MESSAGE _NOT_ HANDLED\n");
+  printf("path: <%s>\n", path);
+  for (i = 0; i < argc; i++) {
+    printf("arg %d '%c' ", i, types[i]);
+    lo_arg_pp((lo_type)types[i], argv[i]);
+    printf("\n");
+  }
+  printf("\n");
+  fflush(stdout);
+
+  return 1;
+}
+
+int matrix_handler(const char *path, const char *types, lo_arg **argv, int argc,
+                   void *data, void *_) {
+  State *state = (State *)_;
+
+  // XXX get lock
+
+  // update gain values
+  //
+  for (int i = 0; i < state->size * state->size; ++i) {
+    float gain = argv[i]->f;
+    if (gain > 1) gain = 1;
+    if (gain < 0) gain = 0;
+    state->gain[i] = gain;
+  }
+  print(state->gain, state->size);
+  fflush(stdout);
+
+  // XXX free lock
+
+  return 0;
+}
+
 int main(int argc, char *argv[]) {
   const char *client_name = "matrix";
   //
@@ -148,9 +203,13 @@ int main(int argc, char *argv[]) {
   //
   state.size = 2;
   if (argc > 1) {
-    int h = atoi(argv[1]);
-    if (h > 0 && h < 33)  //
-      state.size = h;
+    int size = atoi(argv[1]);
+    if (size > 0 && size < 17)  //
+      state.size = size;
+    else {
+      fprintf(stderr, "%d is not a valid matrix size\n", size);
+      exit(1);
+    }
   }
   state.in = (jack_port_t **)calloc(sizeof(jack_port_t *), state.size);
   state.out = (jack_port_t **)calloc(sizeof(jack_port_t *), state.size);
@@ -233,6 +292,17 @@ int main(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
 #endif
 
+  char ffff[257];
+  for (int i = 0; i < 256; ++i)  //
+    ffff[i] = 'f';
+  ffff[state.size * state.size] = '\0';
+  printf("listening on 7777 for /matrix %s\n", ffff);
+
+  lo_server_thread st = lo_server_thread_new("7777", error);
+  lo_server_thread_add_method(st, "/matrix", ffff, matrix_handler, &state);
+  lo_server_thread_add_method(st, NULL, NULL, generic_handler, &state);
+  lo_server_thread_start(st);
+
   for (;;) {
 #ifdef WIN32
     Sleep(1000);
@@ -241,6 +311,7 @@ int main(int argc, char *argv[]) {
 #endif
   }
 
+  lo_server_thread_free(st);
   jack_client_close(client);
   exit(0);
 }
