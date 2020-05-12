@@ -46,18 +46,15 @@ typedef struct {
   jack_default_audio_sample_t **i;
   jack_default_audio_sample_t **o;
   jack_default_audio_sample_t **m;
-  bool *connection;
+  float *gain;
   int size;
 } State;
 
-void print(bool *matrix, int size) {
+void print(float *matrix, int size) {
   printf("~~~~~~~( matrix )~~~~~~~~~~\n");
   for (int k = 0; k < size * size; ++k) {
     if (k % size == 0 && k != 0) printf("\n");
-    if (matrix[k])
-      printf("x");
-    else
-      printf(" ");
+    printf("%f ", matrix[k]);
   }
   printf("\n");
   printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
@@ -84,11 +81,11 @@ int process(jack_nframes_t N, void *_) {
     }
 
     for (int j = 0; j < state->size; ++j) {
-      if (!state->connection[j * state->size + k]) continue;
+      float gain = state->gain[j * state->size + k];
 
       jack_default_audio_sample_t *input = state->i[j];
       for (int n = 0; n < N; ++n) {
-        output[n] += input[n];
+        output[n] += input[n] * gain;
       }
     }
   }
@@ -164,16 +161,16 @@ int main(int argc, char *argv[]) {
       sizeof(jack_default_audio_sample_t *), state.size);
   state.m = (jack_default_audio_sample_t **)calloc(
       sizeof(jack_default_audio_sample_t *), state.size);
-  state.connection = (bool *)calloc(sizeof(bool), state.size * state.size);
+  state.gain = (float *)calloc(sizeof(float), state.size * state.size);
 
   // make a ring
   //
   for (int k = 0; k < state.size; ++k) {
     int j = (1 + k) % state.size;
-    state.connection[k * state.size + j] = true;
+    state.gain[k * state.size + j] = 1;
   }
 
-  print(state.connection, state.size);
+  print(state.gain, state.size);
 
   // start callback (?)
   //
