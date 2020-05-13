@@ -199,6 +199,48 @@ int matrix_handler(const char *path, const char *types, lo_arg **argv, int argc,
   return 0;
 }
 
+int connect_handler(const char *path, const char *types, lo_arg **argv,
+                    int argc, void *data, void *_) {
+  State *state = (State *)_;
+
+  // XXX get lock
+
+  if (argc % 3 != 0) {
+    printf("warning: /connect argument list not divisible by 3");
+    fflush(stdout);
+    return 0;
+  }
+
+  // update gain values
+  //
+  for (int i = 0; i < argc; i += 3) {
+    if (types[i] != 'i' || types[i + 1] != 'i' || types[i + 2] != 'f') {
+      printf("warning: /connect types (%s) wrong\n", types);
+      fflush(stdout);
+      return 0;
+    }
+    int row = argv[i]->i;
+    int column = argv[i + 1]->i;
+    if (row < 0 || row >= state->size || column < 0 || column >= state->size) {
+      printf("warning: /connect arguments (%d, %d) out of bounds\n", row,
+             column);
+      fflush(stdout);
+      return 0;
+    }
+    float gain = argv[i + 2]->f;
+    if (gain > 1) gain = 1;
+    if (gain < 0) gain = 0;
+    state->gain[row * state->size + column] = gain;
+  }
+  state->new = true;
+  print(state->gain, state->size);
+  fflush(stdout);
+
+  // XXX free lock
+
+  return 0;
+}
+
 int main(int argc, char *argv[]) {
   const char *client_name = "matrix";
   //
@@ -331,6 +373,7 @@ int main(int argc, char *argv[]) {
 
   lo_server_thread st = lo_server_thread_new("7777", error);
   lo_server_thread_add_method(st, "/matrix", ffff, matrix_handler, &state);
+  lo_server_thread_add_method(st, "/connect", NULL, connect_handler, &state);
   lo_server_thread_add_method(st, NULL, NULL, generic_handler, &state);
   lo_server_thread_start(st);
 
