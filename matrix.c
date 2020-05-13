@@ -5,7 +5,7 @@
 
 // TODO:
 //
-// - implement cross-fading
+// - test with JackTrip
 // - copy OSC protocol from the Max patch
 // - add automatic connection to JackTrip ports
 // - support several common topology
@@ -13,6 +13,7 @@
 //
 // DONE:
 //
+// - implement cross-fading
 // - note where to put locks
 // - implement OSC control (of absolute matrix state)
 // - integrate OSC library
@@ -50,6 +51,7 @@ typedef struct {
   jack_default_audio_sample_t **m;
   float *gain;
   int size;
+  bool new;
 } State;
 
 void print(float *matrix, int size) {
@@ -62,11 +64,21 @@ void print(float *matrix, int size) {
   printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 }
 
+static float *gain;
+static float *target;
+static float *increment;
+
 int process(jack_nframes_t N, void *_) {
   State *state = (State *)_;
 
   // XXX try lock
-  // copy gains to local static
+  if (state->new) {
+    state->new = false;
+    for (int i = 0; i < state->size * state->size; ++i) {
+      target[i] = state->gain[i];
+      increment[i] = (target[i] - gain[i]) / (0.1 * 44100);
+    }
+  }
   // XXX free lock
 
   for (int k = 0; k < state->size; ++k) {
@@ -87,13 +99,25 @@ int process(jack_nframes_t N, void *_) {
     }
 
     for (int j = 0; j < state->size; ++j) {
-      // XXX use local static instead
-      float gain = state->gain[j * state->size + k];
+      int index = j * state->size + k;
+      float g = gain[index];
+      float t = target[index];
+      float i = increment[index];
 
       jack_default_audio_sample_t *input = state->i[j];
       for (int n = 0; n < N; ++n) {
-        output[n] += input[n] * gain;
+        // linear ramp from value to target
+        //
+        if (g != t) {
+          g += i;
+          if (i < 0 ? (g < t) : (g > t))  //
+            g = t;
+        }
+
+        output[n] += input[n] * g;
       }
+
+      gain[index] = g;
     }
   }
 
@@ -166,6 +190,7 @@ int matrix_handler(const char *path, const char *types, lo_arg **argv, int argc,
     if (gain < 0) gain = 0;
     state->gain[i] = gain;
   }
+  state->new = true;
   print(state->gain, state->size);
   fflush(stdout);
 
@@ -221,6 +246,12 @@ int main(int argc, char *argv[]) {
   state.m = (jack_default_audio_sample_t **)calloc(
       sizeof(jack_default_audio_sample_t *), state.size);
   state.gain = (float *)calloc(sizeof(float), state.size * state.size);
+  state.new = true;
+
+  // globals for audio thread only
+  gain = (float *)calloc(sizeof(float), state.size * state.size);
+  target = (float *)calloc(sizeof(float), state.size * state.size);
+  increment = (float *)calloc(sizeof(float), state.size * state.size);
 
   // make a ring
   //
