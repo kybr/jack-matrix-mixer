@@ -14,5 +14,5 @@ Control the matrix with OSC messages such as these:
     /connect iif 0 1 0.333
     /connect iifiif 0 1 0.0 1 0 1.0
 
-Where the number of `f` in the type list of the `/matrix` message is $N \cdot N$ where $N$ is the length of a side of the square matrix.
+Where the number of `f` in the type list of the `/matrix` message is N * N where N is the length of a side of the square matrix.
 
