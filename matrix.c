@@ -4,19 +4,21 @@
 //
 // Karl Yerkes / 2020-05-xx
 //
-//  a "ring" topology..
-//    ╔═╤═╤═╤═╤═╗
-//   1║ │░│ │ │ ║
-// I  ╟─┼─┼─┼─┼─╢
-// N 2║ │ │░│ │ ║
-// P  ╟─┼─┼─┼─┼─╢
-// U 3║ │ │ │░│ ║
-// T  ╟─┼─┼─┼─┼─╢
-// S 4║ │ │ │ │░║
-//    ╟─┼─┼─┼─┼─╢
-//   5║░│ │ │ │ ║
-//    ╚═╧═╧═╧═╧═╝
-//     1 2 3 4 5
+// the default "ring" topology..
+//
+//      COLUMNS
+// I  ╔═╤═╤═╤═╤═╗
+//   ₁║ │░│ │ │ ║
+// N  ╟─┼─┼─┼─┼─╢ R
+//   ₂║ │ │░│ │ ║
+// P  ╟─┼─┼─┼─┼─╢ O
+//   ₃║ │ │ │░│ ║
+// U  ╟─┼─┼─┼─┼─╢ W
+//   ₄║ │ │ │ │░║
+// T  ╟─┼─┼─┼─┼─╢ S
+//   ₅║░│ │ │ │ ║
+// S  ╚═╧═╧═╧═╧═╝
+//     ₁ ₂ ₃ ₄ ₅
 //      OUTPUTS
 //
 
@@ -37,6 +39,9 @@
 #include <jack/jack.h>
 #include <lo/lo.h>
 #include <pthread.h>
+
+// how to index the gain data
+#define INDEX(n, r, c) (r * n + c)
 
 ///////////////////////////////////////////////////////////////////////////////
 //// STRUCTS //////////////////////////////////////////////////////////////////
@@ -95,19 +100,19 @@ int process(jack_nframes_t N, void *_) {
 
   // matrix
   //
-  for (int k = 0; k < state->size; ++k) {
-    jack_default_audio_sample_t *output = state->o[k];
+  for (int column = 0; column < state->size; ++column) {
+    jack_default_audio_sample_t *output = state->o[column];
     for (int n = 0; n < N; ++n) {
       output[n] = 0;
     }
 
-    for (int j = 0; j < state->size; ++j) {
-      int index = j * state->size + k;
+    for (int row = 0; row < state->size; ++row) {
+      int index = INDEX(state->size, row, column);
       float g = gain[index];
       float t = target[index];
       float i = increment[index];
 
-      jack_default_audio_sample_t *input = state->i[j];
+      jack_default_audio_sample_t *input = state->i[row];
       for (int n = 0; n < N; ++n) {
         // linear ramp from value to target
         //
@@ -126,16 +131,16 @@ int process(jack_nframes_t N, void *_) {
 
   // mixes: everyone gets a mix of everyone but them
   //
-  for (int k = 0; k < state->size; ++k) {
-    jack_default_audio_sample_t *mix = state->m[k];
+  for (int column = 0; column < state->size; ++column) {
+    jack_default_audio_sample_t *mix = state->m[column];
     for (int n = 0; n < N; ++n) {
       mix[n] = 0;
     }
 
-    for (int j = 0; j < state->size; ++j) {
-      if (j == k) continue;
+    for (int row = 0; row < state->size; ++row) {
+      if (row == column) continue;
 
-      jack_default_audio_sample_t *input = state->i[j];
+      jack_default_audio_sample_t *input = state->i[row];
       for (int n = 0; n < N; ++n) {
         mix[n] += input[n];
       }
@@ -146,18 +151,31 @@ int process(jack_nframes_t N, void *_) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-//// AUDIO CALLBACK ///////////////////////////////////////////////////////////
+//// HELPER FUNCTIONS /////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void print(float *matrix, int size) {
-  printf("~~~~~~~( matrix )~~~~~~~~~~\n");
-  for (int k = 0; k < size * size; ++k) {
-    if (k % size == 0 && k != 0) printf("\n");
-    printf("%f ", matrix[k]);
-  }
-  printf("\n");
-  printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+const char *character(float v) {
+  const char *block[9] = {"░", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+  int i = (v * 8);
+  if (i < 0) i = 0;
+  if (i > 8) i = 8;
+  return block[i];
 }
+
+void print(float *matrix, int size) {
+  for (int i = 0; i < size; ++i)  //
+    printf("─");
+  printf("\n");
+  for (int row = 0; row < size; ++row) {
+    for (int column = 0; column < size; ++column)  //
+      printf("%s", character(matrix[INDEX(size, row, column)]));
+    printf("\n");
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//// OTHER CALLBACKS //////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 void jack_shutdown(void *arg) { exit(1); }
 
@@ -259,7 +277,7 @@ int connect_handler(const char *path, const char *types, lo_arg **argv,
     float gain = argv[i + 2]->f;
     if (gain > 1) gain = 1;
     if (gain < 0) gain = 0;
-    state->gain[row * state->size + column] = gain;
+    state->gain[INDEX(state->size, row, column)] = gain;
   }
   state->new = true;
   print(state->gain, state->size);
@@ -335,12 +353,10 @@ int main(int argc, char *argv[]) {
 
   // make a ring
   //
-  for (int k = 0; k < state.size; ++k) {
-    int j = (1 + k) % state.size;
-    state.gain[k * state.size + j] = 1;
+  for (int column = 0; column < state.size; ++column) {
+    int row = (1 + column) % state.size;
+    state.gain[INDEX(state.size, row, column)] = 1;
   }
-
-  print(state.gain, state.size);
 
   // start callback (?)
   //
@@ -407,13 +423,16 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < 256; ++i)  //
     ffff[i] = 'f';
   ffff[state.size * state.size] = '\0';
-  printf("listening on 7777 for /matrix %s\n", ffff);
 
   lo_server_thread st = lo_server_thread_new("7777", error);
   lo_server_thread_add_method(st, "/matrix", ffff, matrix_handler, &state);
   lo_server_thread_add_method(st, "/connect", NULL, connect_handler, &state);
   lo_server_thread_add_method(st, NULL, NULL, generic_handler, &state);
   lo_server_thread_start(st);
+  printf("listening on 7777 for /matrix %s\n", ffff);
+
+  // XXX maybe do this with an OSC message to self?
+  print(state.gain, state.size);
 
   for (;;) {
 #ifdef WIN32
