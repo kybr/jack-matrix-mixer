@@ -21,6 +21,7 @@
 #endif
 #include <jack/jack.h>
 #include <lo/lo.h>
+#include <pthread.h>
 
 ///////////////////////////////////////////////////////////////////////////////
 //// STRUCTS //////////////////////////////////////////////////////////////////
@@ -43,7 +44,7 @@ typedef struct {
 ///////////////////////////////////////////////////////////////////////////////
 
 jack_client_t *client;
-// pthread_mutex_t mutex;
+pthread_mutex_t mutex;
 
 static float *gain;
 static float *target;
@@ -56,15 +57,17 @@ static float *increment;
 int process(jack_nframes_t N, void *_) {
   State *state = (State *)_;
 
-  // XXX try lock
-  if (state->new) {
-    state->new = false;
-    for (int i = 0; i < state->size * state->size; ++i) {
-      target[i] = state->gain[i];
-      increment[i] = (target[i] - gain[i]) / (0.1 * 44100);
+  if (pthread_mutex_trylock(&mutex) == 0) {
+    if (state->new) {
+      state->new = false;
+      for (int i = 0; i < state->size * state->size; ++i) {
+        target[i] = state->gain[i];
+        increment[i] = (target[i] - gain[i]) / (0.1 * 44100);
+      }
     }
+
+    pthread_mutex_unlock(&mutex);
   }
-  // XXX free lock
 
   for (int k = 0; k < state->size; ++k) {
     state->i[k] =
@@ -181,7 +184,12 @@ int matrix_handler(const char *path, const char *types, lo_arg **argv, int argc,
                    void *data, void *_) {
   State *state = (State *)_;
 
-  // XXX get lock
+  // BLOCKING
+  if (pthread_mutex_lock(&mutex) != 0) {
+    printf("mutex lock failed\n");
+    fflush(stdout);
+    exit(1);
+  }
 
   // update gain values
   //
@@ -195,7 +203,7 @@ int matrix_handler(const char *path, const char *types, lo_arg **argv, int argc,
   print(state->gain, state->size);
   fflush(stdout);
 
-  // XXX free lock
+  pthread_mutex_unlock(&mutex);
 
   return 0;
 }
@@ -204,7 +212,12 @@ int connect_handler(const char *path, const char *types, lo_arg **argv,
                     int argc, void *data, void *_) {
   State *state = (State *)_;
 
-  // XXX get lock
+  // BLOCKING
+  if (pthread_mutex_lock(&mutex) != 0) {
+    printf("mutex lock failed\n");
+    fflush(stdout);
+    exit(1);
+  }
 
   if (argc % 3 != 0) {
     printf("warning: /connect argument list not divisible by 3");
@@ -237,7 +250,7 @@ int connect_handler(const char *path, const char *types, lo_arg **argv,
   print(state->gain, state->size);
   fflush(stdout);
 
-  // XXX free lock
+  pthread_mutex_unlock(&mutex);
 
   return 0;
 }
@@ -247,6 +260,11 @@ int connect_handler(const char *path, const char *types, lo_arg **argv,
 ///////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[]) {
+  if (pthread_mutex_init(&mutex, NULL) != 0) {
+    printf("\n mutex init failed\n");
+    return 1;
+  }
+
   const char *client_name = "matrix";
   //
   //

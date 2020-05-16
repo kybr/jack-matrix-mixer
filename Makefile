@@ -2,7 +2,7 @@ _: clean matrix test
 
 matrix:
 	cc -Wall -g -c matrix.c
-	cc -g -o matrix matrix.o -ljack -llo
+	cc -g -o matrix matrix.o -ljack -llo -lpthread
 
 test:
 	cc -Wall -g -c test.c

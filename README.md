@@ -32,6 +32,7 @@ Where the number of `f` in the type list of the `/matrix` message is N * N where
 
 ### DONE
 
+- add mutex to protect audio/network thread communication
 - implement cross-fading
 - note where to put locks
 - implement OSC control (of absolute matrix state)
