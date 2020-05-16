@@ -315,7 +315,7 @@ int main(int argc, char *argv[]) {
   for (int k = 0; k < state.size; ++k) {
     // inputs
     //
-    sprintf(port_name, "input%d", k);
+    sprintf(port_name, "input_%d", 1 + k);
     state.in[k] = jack_port_register(client, port_name, JACK_DEFAULT_AUDIO_TYPE,
                                      JackPortIsInput, 0);
     if (state.in[k] == NULL) {
@@ -325,7 +325,7 @@ int main(int argc, char *argv[]) {
 
     // outputs
     //
-    sprintf(port_name, "output%d", k);
+    sprintf(port_name, "output_%d", 1 + k);
     state.out[k] = jack_port_register(
         client, port_name, JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
     if (state.out[k] == NULL) {
@@ -335,7 +335,7 @@ int main(int argc, char *argv[]) {
 
     // mixes (also outputs)
     //
-    sprintf(port_name, "mix%d", k);
+    sprintf(port_name, "mix_%d", 1 + k);
     state.mix[k] = jack_port_register(
         client, port_name, JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
     if (state.mix[k] == NULL) {

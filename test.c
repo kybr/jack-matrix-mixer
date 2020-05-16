@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
 
   for (int k = 0; k < state.out_count; ++k) {
     char output_name[256] = {0};
-    sprintf(output_name, "output%d", k);
+    sprintf(output_name, "output_%d", 1 + k);
     state.out[k] = jack_port_register(
         client, output_name, JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
     if (state.out[k] == NULL) {
