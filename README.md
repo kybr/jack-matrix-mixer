@@ -22,3 +22,26 @@ Control the matrix with OSC messages such as these:
 
 Where the number of `f` in the type list of the `/matrix` message is N * N where N is the length of a side of the square matrix.
 
+## TODO
+
+- test with JackTrip
+- copy OSC protocol from the Max patch
+- add automatic connection to JackTrip ports
+- support several common topology
+  + ring, star, trios, full
+
+### DONE
+
+- implement cross-fading
+- note where to put locks
+- implement OSC control (of absolute matrix state)
+- integrate OSC library
+- fix clicks at the block rate
+  + you have to clear the output buffer before accumulating
+- implement matrix mixing
+- adapt to allow CLI option for N inputs/outputs
+- remove globals
+- make a compiling, running jack client app
+- make a Github repository
+- choose a license
+- start a README

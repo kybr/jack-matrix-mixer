@@ -1,31 +1,13 @@
-/**
- * Cross-Fading Matrix Mixer
- * Karl Yerkes, 2020-05-08
- */
+///////////////////////////////////////////////////////////////////////////////
+//// Cross-Fading Matrix Mixer ////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+//
+// Karl Yerkes / 2020-05-xx
+//
 
-// TODO:
-//
-// - test with JackTrip
-// - copy OSC protocol from the Max patch
-// - add automatic connection to JackTrip ports
-// - support several common topology
-//   + ring, star, trios, full
-//
-// DONE:
-//
-// - implement cross-fading
-// - note where to put locks
-// - implement OSC control (of absolute matrix state)
-// - integrate OSC library
-// - fix clicks at the block rate
-//   + you have to clear the output buffer before accumulating
-// - implement matrix mixing
-// - adapt to allow CLI option for N inputs/outputs
-// - remove globals
-// - make a compiling, running jack client app
-// - make a Github repository
-// - choose a license
-// - start a README
+///////////////////////////////////////////////////////////////////////////////
+//// INCLUDES /////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 #include <errno.h>
 #include <math.h>
@@ -40,7 +22,9 @@
 #include <jack/jack.h>
 #include <lo/lo.h>
 
-jack_client_t *client;  // maybe we can have just this one global
+///////////////////////////////////////////////////////////////////////////////
+//// STRUCTS //////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 typedef struct {
   jack_port_t **in;
@@ -54,19 +38,20 @@ typedef struct {
   bool new;
 } State;
 
-void print(float *matrix, int size) {
-  printf("~~~~~~~( matrix )~~~~~~~~~~\n");
-  for (int k = 0; k < size * size; ++k) {
-    if (k % size == 0 && k != 0) printf("\n");
-    printf("%f ", matrix[k]);
-  }
-  printf("\n");
-  printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
-}
+///////////////////////////////////////////////////////////////////////////////
+//// GLOBALS //////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+jack_client_t *client;
+// pthread_mutex_t mutex;
 
 static float *gain;
 static float *target;
 static float *increment;
+
+///////////////////////////////////////////////////////////////////////////////
+//// AUDIO CALLBACK ///////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 int process(jack_nframes_t N, void *_) {
   State *state = (State *)_;
@@ -142,6 +127,20 @@ int process(jack_nframes_t N, void *_) {
   return 0;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+//// AUDIO CALLBACK ///////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void print(float *matrix, int size) {
+  printf("~~~~~~~( matrix )~~~~~~~~~~\n");
+  for (int k = 0; k < size * size; ++k) {
+    if (k % size == 0 && k != 0) printf("\n");
+    printf("%f ", matrix[k]);
+  }
+  printf("\n");
+  printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+}
+
 void jack_shutdown(void *arg) { exit(1); }
 
 static void signal_handler(int sig) {
@@ -150,13 +149,15 @@ static void signal_handler(int sig) {
   exit(0);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+//// NETWORK CALLBACKS ////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
 void error(int num, const char *msg, const char *path) {
   printf("liblo server error %d in path %s: %s\n", num, path, msg);
   fflush(stdout);
 }
 
-/* catch any incoming messages and display them. returning 1 means that the
- * message has not been fully handled and the server should try other methods */
 int generic_handler(const char *path, const char *types, lo_arg **argv,
                     int argc, void *data, void *_) {
   // State *state = (State *)_;
@@ -240,6 +241,10 @@ int connect_handler(const char *path, const char *types, lo_arg **argv,
 
   return 0;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+//// MAIN /////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[]) {
   const char *client_name = "matrix";
