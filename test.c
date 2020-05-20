@@ -14,6 +14,10 @@
 #endif
 #include <jack/jack.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846264338327950288419716939937
+#endif
+
 jack_client_t *client;  // maybe we can have just this one global
 
 #define TABLE_SIZE (16384)
